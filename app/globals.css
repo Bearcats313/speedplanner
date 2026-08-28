@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+/* Palette, tech spec §7.1. Six values, cool and instrumental. --signal
+   appears in exactly two places: the primary action on a screen and the
+   load figure in a set line. --flag is warnings only — the push logout
+   notice. No dark/light toggle — this is the one look, PRD "deliberately
+   absent". */
+:root {
+  --ink: #16181d;
+  --paper: #f1f2ee;
+  --surface: #ffffff;
+  --line: #d6d9d1;
+  --signal: #2f5d50;
+  --flag: #9a5b12;
+
+  --font-display: var(--font-archivo-narrow);
+  --font-body: var(--font-inter);
+  --font-mono: var(--font-ibm-plex-mono);
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --color-signal: var(--signal);
+  --color-flag: var(--flag);
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+}
+
+* {
+  border-color: var(--line);
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Every numeral in the app, no exception — tech spec §7.1. */
+.tabular {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.font-display {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+}
+
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--line) 25%, #e4e6df 37%, var(--line) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
