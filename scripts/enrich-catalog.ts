@@ -42,11 +42,16 @@ async function main() {
     .select("id, name, muscle, tab")
     .is("retired_at", null);
   if (error) throw new Error(error.message);
+  console.log(`Found ${(allExercises ?? []).length} active (non-retired) exercises.`);
 
   let toEnrich = allExercises ?? [];
   if (!all) {
-    const { data: enrichedIds } = await supabase.from("exercise_enrichment").select("exercise_id");
+    const { data: enrichedIds, error: enrichedError } = await supabase
+      .from("exercise_enrichment")
+      .select("exercise_id");
+    if (enrichedError) throw new Error(enrichedError.message);
     const enrichedSet = new Set((enrichedIds ?? []).map((r) => String(r.exercise_id)));
+    console.log(`${enrichedSet.size} already have enrichment rows.`);
     toEnrich = toEnrich.filter((e: Pick<Exercise, "id" | "name" | "muscle" | "tab">) => !enrichedSet.has(String(e.id)));
   }
 
