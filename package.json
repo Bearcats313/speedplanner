@@ -8,8 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "import-catalog": "tsx scripts/import-catalog.ts",
-    "enrich-catalog": "tsx scripts/enrich-catalog.ts"
+    "import-catalog": "tsx --env-file=.env.local scripts/import-catalog.ts",
+    "enrich-catalog": "tsx --env-file=.env.local scripts/enrich-catalog.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
