@@ -81,6 +81,12 @@ async function main() {
       name,
       muscle: String(e.muscle).trim(),
       tab,
+      // Explicit, not omitted: being present in this pull means active,
+      // so a row that was previously retired and has since reappeared
+      // (or was wrongly retired, as by the bug this line fixes) comes
+      // back — an upsert that leaves this column out of the payload
+      // never touches it, so a retired row would stay retired forever.
+      retired_at: null,
       synced_at: new Date().toISOString(),
     };
   });
@@ -101,7 +107,12 @@ async function main() {
   if (existingError) throw new Error(`Failed reading existing rows: ${existingError.message}`);
 
   const pulledIds = new Set(rows.map((r) => r.id));
-  const toRetire = (existingIds ?? []).map((r) => r.id).filter((id: string) => !pulledIds.has(id));
+  // Postgres bigint can come back from PostgREST as a JS number rather than
+  // a string, so compare on String(r.id) — not r.id directly — or every
+  // existing row looks "not in the pull" even right after upserting it.
+  const toRetire = (existingIds ?? [])
+    .map((r) => String(r.id))
+    .filter((id) => !pulledIds.has(id));
 
   if (toRetire.length > 0) {
     const { error: retireError } = await supabase
