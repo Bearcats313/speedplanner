@@ -80,26 +80,35 @@ Each step should be checkable before moving to the next.
 
 ## What's here vs. what needs a live pass
 
-Built without live Supabase/Anthropic/Speediance credentials this session
-(by request) — everything is implemented against the documented contracts,
-but nothing has run against real services yet:
+This was originally built without live Supabase/Anthropic/Speediance
+credentials, against documented contracts alone. Since then, most of it has
+actually been run live and confirmed working:
 
-- **Catalog import** (`scripts/import-catalog.ts`) is written against the
-  documented `library --json` shape; run it against a real pull before
-  trusting it, per step 2 above.
-- **Enrichment, generation, and refinement** call the Anthropic API for
-  real; they haven't been run, so the prompts in `lib/claude/prompts.ts`
-  may need a pass or two once you can see real output.
+- **Catalog import, enrichment, and generation** have all run successfully
+  against a real Supabase project and Anthropic account: 883 exercises
+  imported, enriched, and used to generate a real week.
 - **The Speediance client** (`lib/speediance/client.ts`) is a TypeScript
   port of `github.com/stozo04/speediance-cli`'s auth flow, catalog
   endpoints, and program-push payload (MIT, attributed in the file header).
-  The PRD states push and catalog pull are already confirmed working
-  against a GM2 account via that CLI; this port hasn't itself been run
-  against the live API yet. Confirm the base URL host and
-  `SPEEDIANCE_DEVICE_TYPE` value before the first push — get those wrong
-  and nothing will work, get the weight-unit handling wrong and every load
-  on the machine is off by a factor of ~2.2.
-- **Migration** hasn't been applied to a real project.
+  Catalog pull is confirmed working live. Push has gone through several
+  rounds of live-error-driven fixes — an initial version was built from an
+  AI-generated *summary* of the CLI's Go source, which turned out to
+  conflate Go's exported-field naming convention with the actual JSON wire
+  format (PascalCase vs. the real lowercase/camelCase) and to be missing
+  structural pieces entirely (the push payload needs two additional lookup
+  calls per exercise — resolving a catalog id to a postable "variant" id,
+  and checking whether it's unilateral — that weren't in the original
+  port at all). The client has since been rewritten against the literal
+  struct tags in the CLI's source (`internal/api/types.go`,
+  `internal/api/client.go`, `internal/template/template.go`), not a
+  description of them — see the tech spec's §4.1 "read the struct tags,
+  not the field names" for why that distinction mattered. **A full
+  end-to-end push with the corrected payload has not yet been confirmed
+  live** — that's the one thing still genuinely open. If it still fails,
+  the client logs the full raw request/response (password redacted) both
+  server-side and in the push dialog, so the next failure should be
+  immediately diagnosable rather than another round of inference.
+- **Migration** has been applied to a real Supabase project.
 
 ## Known simplifications
 

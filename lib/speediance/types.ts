@@ -35,6 +35,21 @@ export interface CatalogPullResult {
   pulledAt: string;
 }
 
+// --- Push-time lookups (§4.2, internal/template/template.go) -------------
+// A catalog id (groupId) is not itself postable — the push payload needs a
+// resolved "variant" id (actionLibraryId) and whether the exercise is
+// unilateral, both fetched per push rather than stored, since they're not
+// part of the catalog import shape.
+
+export interface GroupListEntry {
+  id: number | string;
+  actionLibraryList?: { id: number | string }[];
+}
+
+export interface UnilateralData {
+  isLeftRight: number;
+}
+
 // --- Program push (§4.2) -------------------------------------------------
 
 export interface PlanSet {
