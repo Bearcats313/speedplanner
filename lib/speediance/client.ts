@@ -101,6 +101,8 @@ class SessionCache {
 // already a single user-initiated request that bundles every day.
 const sessionCache = new SessionCache();
 
+const REQUEST_TIMEOUT_MS = 20_000;
+
 async function request<T>(
   path: string,
   init: RequestInit & { session?: SpeedianceSession | null } = {},
@@ -112,7 +114,26 @@ async function request<T>(
     headers.App_user_id = String(session.appUserId);
   }
 
-  const res = await fetch(`${baseUrl()}${path}`, { ...rest, headers });
+  // This is an unofficial, undocumented API — a wrong host or a dead
+  // endpoint should fail loud, not hang the push dialog forever with no
+  // signal. Every call gets a hard timeout for that reason.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl()}${path}`, { ...rest, headers, signal: controller.signal });
+  } catch (err) {
+    if ((err as { name?: string }).name === "AbortError") {
+      throw new Error(
+        `Speediance API ${path} timed out after ${REQUEST_TIMEOUT_MS / 1000}s — check SPEEDIANCE_REGION and that the endpoint is reachable`,
+      );
+    }
+    throw new Error(`Speediance API ${path} request failed: ${(err as Error).message}`);
+  } finally {
+    clearTimeout(timeout);
+  }
+
   if (!res.ok) {
     throw new Error(`Speediance API ${path} responded ${res.status}`);
   }
