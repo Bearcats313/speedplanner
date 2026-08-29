@@ -179,6 +179,12 @@ export function WeekBoard({ week }: { week: WeekWithDays }) {
       <SummaryBanner summary={week.summary} />
 
       <DndContext
+        // dnd-kit auto-generates ARIA announcement ids (DndDescribedBy-N)
+        // off a module-level counter when none is given, which drifts
+        // between the server render and the client's first render and
+        // trips a hydration mismatch — reported live. A stable, explicit
+        // id sidesteps the counter entirely.
+        id="week-board"
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}
