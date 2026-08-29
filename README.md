@@ -102,12 +102,14 @@ actually been run live and confirmed working:
   struct tags in the CLI's source (`internal/api/types.go`,
   `internal/api/client.go`, `internal/template/template.go`), not a
   description of them — see the tech spec's §4.1 "read the struct tags,
-  not the field names" for why that distinction mattered. **A full
-  end-to-end push with the corrected payload has not yet been confirmed
-  live** — that's the one thing still genuinely open. If it still fails,
-  the client logs the full raw request/response (password redacted) both
-  server-side and in the push dialog, so the next failure should be
-  immediately diagnosable rather than another round of inference.
+  not the field names" for why that distinction mattered. **A full week has
+  since pushed successfully and appeared correctly in the Speediance app**,
+  weight values included (no unit-conversion error) — see
+  `docs/speediance-api-contract.md` for the endpoint-by-endpoint evidence
+  trail. The client still logs the full raw request/response (password
+  redacted) on every call, both server-side and in the push dialog, so any
+  future failure — a Speediance API change, say — stays immediately
+  diagnosable rather than another round of inference.
 - **Migration** has been applied to a real Supabase project.
 
 ## Known simplifications

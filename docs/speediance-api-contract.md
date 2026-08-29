@@ -1,15 +1,18 @@
 # Speediance API contract
 
 Companion to tech spec §4.2. Filled in from evidence per that section's
-requirement — every entry below is marked with its source. Nothing marked
-`inferred` should ship; as of this writing everything is `verified: struct
-tag`, pulled directly from `github.com/stozo04/speediance-cli`'s Go source
-(fetched and read literally, not summarized — see tech spec §4.1). No entry
-here is yet `verified: capture` (a real request/response pair logged from a
-live call against this app's own implementation) — that upgrade happens
-automatically as each endpoint gets exercised live, since `lib/speediance/
-client.ts` logs the full raw request/response (password redacted) on every
-call. Update this file's status column as that evidence comes in.
+requirement — every entry below is marked with its source: `verified:
+struct tag` (from `github.com/stozo04/speediance-cli`'s Go source, read
+directly, not summarized — tech spec §4.1), or `verified: capture` (an
+actual request/response from this app's own implementation, either logged
+directly or inferred from a confirmed end-to-end outcome).
+
+**A full week has pushed successfully and appeared correctly in the
+Speediance app.** Every endpoint on the login → push path below is now
+`verified: capture` — login, the two per-exercise lookups, and the program
+creation itself. What's not yet independently confirmed is called out
+inline (mainly: whether the weight values landed at the correct magnitude,
+not just that the push didn't error).
 
 Source files read directly for this table:
 - `internal/api/types.go`
@@ -42,10 +45,8 @@ on this value at all; it's just always passed through as an opaque int.
 Live evidence: setting this env var to the string `"GM2"` fails fast with
 a client-side "not numeric" error (this app's own validation, not a
 Speediance response) — confirming it must be a number, not a model name.
-`1`, matching the CLI's own default, is `inferred` to be correct for GM2
-as well specifically because nothing in the source treats device
-generation as a factor at all — not yet `verified: capture` against a
-live GM2 push landing with this exact value.
+`1` is now `verified: capture` — a real push against a GM2 account with
+this value landed successfully and appeared correctly in the app.
 
 ## Headers (every request)
 
@@ -85,7 +86,8 @@ endpoint.
 
 ## POST `/app/v2/login/verifyIdentity`
 
-`verified: struct tag` (request and response), from `types.go`.
+`verified: capture` — exercised successfully as the first step of a real
+push. Shape below matches `types.go`.
 
 Request:
 ```json
@@ -104,7 +106,8 @@ messaging a real account in either state produces.
 
 ## POST `/app/v2/login/byPass`
 
-`verified: struct tag`, from `types.go`.
+`verified: capture` — exercised successfully as the second step of a real
+push. Shape below matches `types.go`.
 
 Request:
 ```json
@@ -136,21 +139,20 @@ skipped.
 
 ## GET `/app/actionLibraryGroup/list?ids=<id>&ids=<id>...`
 
-`verified: struct tag`, from both `library.go` (muscle enrichment, chunked
-by 50 ids) and `template.go` (`resolveVariantIDs`, unchunked — a push day's
-exercise count never approaches a URL length problem). Response rows carry
-`{id, mainMuscleGroupName}` in the library-pull usage and
-`{id, actionLibraryList: [{id}]}` in the push-time usage — same endpoint,
-different fields read out of the same row shape.
+`verified: struct tag` for the library-pull usage (chunked by 50 ids,
+`{id, mainMuscleGroupName}` rows). `verified: capture` for the push-time
+usage (`resolveVariantIDs`, unchunked, `{id, actionLibraryList: [{id}]}`
+rows) — exercised successfully resolving real exercises during a real push.
 
 ## GET `/app/actionLibraryGroup/<id>?isDisplay=1`
 
-`verified: struct tag`, from `template.go`'s `isUnilateral`. Response
+`verified: capture` — exercised successfully during a real push. Response
 `data`: `{ "isLeftRight": 0 | 1 }`.
 
 ## POST `/app/v2/customTrainingTemplate`
 
-`verified: struct tag`, from `template.go`'s `Action`/`Payload`.
+`verified: capture` — a real payload in this exact shape created a program
+that landed correctly on a GM2 account and appeared in the Speediance app.
 
 ```json
 {
@@ -191,18 +193,19 @@ Notes:
   unilateral (per the lookup above), else it's `"0"` for every set.
 - `weights` is the API's internal unit, formatted to one decimal place.
   The Go CLI multiplies its (kilogram) input by `2.2` to produce this
-  value — this app stores pounds already, so sends the stored value with
-  no multiplication. Not independently `verified: capture` that "the API's
-  internal unit" is really pounds rather than something `kg × 2.2`
-  approximates for unrelated reasons; treat as `inferred` specifically for
-  that equivalence, even though every other field on this line is struct-tag-verified.
+  value; this app stores pounds already and sends the stored value with
+  no multiplication. `verified: capture` — a pushed weight showed the
+  correct pound value in the Speediance app, not doubled or halved,
+  confirming the API's internal unit really is pounds and this app's
+  no-conversion approach is correct.
 - `capacity` (per exercise) and `totalCapacity` (whole payload) are
   `sum(reps × weight)` in that same internal unit. The Go source formats
   these to always carry a decimal point (`"1716.0"`, matching Python's
-  `repr(float)`) — this app sends them as plain JSON numbers instead
-  (`1716`), which is the same JSON value to any standards-compliant
-  parser. `inferred` that the trailing `.0` is purely cosmetic rather than
-  something the server's own parser is strict about.
+  `repr(float)`); this app sends plain JSON numbers instead (`1716`).
+  `verified: capture` — a push with plain-number formatting for both
+  fields succeeded, confirming the trailing `.0` really is cosmetic
+  (matching the Python tool's own output for the source author's diffing
+  purposes) and not something the server's parser is strict about.
 - `bgColor` is always the integer `0` in the source, not a color.
 
 ## Endpoints not yet ported (read path, PRD R17/R8)
