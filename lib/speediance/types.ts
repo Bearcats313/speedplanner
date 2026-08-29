@@ -3,15 +3,22 @@
 // internal/template packages — and confirmed live against a GM2 account.
 // See lib/speediance/client.ts for the MIT attribution and port notes.
 
+// Confirmed live: the real API's JSON is lowercase/camelCase (code,
+// message, traceId), not the PascalCase (Code, Msg) an earlier summary of
+// the Go source implied — that summary conflated Go's exported-field
+// naming convention with the actual wire format. LoginData's casing below
+// is not yet confirmed the same way (verifyIdentity fails before byPass
+// is ever reached) — camelCase by the same pattern is the best guess.
 export interface SpeedianceEnvelope<T> {
-  Code: number; // 0 = success, 91 = token expired
-  Data: T;
-  Msg?: string;
+  code: number; // 0 = success, 91 = token expired
+  data: T;
+  message?: string;
+  traceId?: string;
 }
 
 export interface LoginData {
-  Token: string;
-  AppUserID: string | number;
+  token: string;
+  appUserId: string | number;
 }
 
 /** Raw catalog row as returned by the library endpoints, before our schema

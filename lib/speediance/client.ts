@@ -152,40 +152,48 @@ async function request<T>(
     );
   }
 
-  // This is a reverse-engineered, undocumented envelope shape. If Code is
+  // This is a reverse-engineered, undocumented envelope shape. If code is
   // missing entirely, the real response doesn't match what was assumed —
   // log the full body server-side (it's Speediance's reply, not anything
   // of ours, so nothing sensitive in it) and put a snippet in the thrown
   // error too, so the actual shape is visible instead of guessed at again.
-  if (envelope.Code === undefined) {
-    console.error(`Speediance API ${url} -> HTTP 200, no Code field. Body:\n${rawBody.slice(0, 2000)}`);
+  if (envelope.code === undefined) {
+    console.error(`Speediance API ${url} -> HTTP 200, no code field. Body:\n${rawBody.slice(0, 2000)}`);
     throw new Error(`Speediance API ${path} returned an unexpected shape: ${rawBody.slice(0, 300)}`);
   }
-  if (envelope.Code === TOKEN_EXPIRED_CODE) {
+  if (envelope.code === TOKEN_EXPIRED_CODE) {
     const err = new Error("Speediance token expired") as Error & { expired: true };
     err.expired = true;
     throw err;
   }
-  if (envelope.Code !== 0) {
-    throw new Error(envelope.Msg ?? `Speediance API ${path} returned code ${envelope.Code}: ${rawBody.slice(0, 300)}`);
+  if (envelope.code !== 0) {
+    throw new Error(envelope.message ?? `Speediance API ${path} returned code ${envelope.code}: ${rawBody.slice(0, 300)}`);
   }
-  return envelope.Data;
+  return envelope.data;
 }
 
 /** Authenticates and caches the token. Never logs or stores the password —
- * it is held only for the duration of this call. */
+ * it is held only for the duration of this call.
+ *
+ * Body field casing (type/userIdentity/password) is a best-effort fix, not
+ * yet confirmed live: a "Parameter error" response confirmed the response
+ * envelope is lowercase/camelCase, not the PascalCase an earlier summary
+ * of the CLI's Go source implied, and the request body is the most likely
+ * place the same casing mistake also landed. If this still 400s, the raw
+ * response (logged both server-side and in the push dialog, see request())
+ * will show whichever field name is still wrong. */
 async function login(email: string, password: string): Promise<SpeedianceSession> {
   await request<unknown>("/app/v2/login/verifyIdentity", {
     method: "POST",
-    body: JSON.stringify({ Type: 2, UserIdentity: email }),
+    body: JSON.stringify({ type: 2, userIdentity: email }),
   });
 
   const data = await request<LoginData>("/app/v2/login/byPass", {
     method: "POST",
-    body: JSON.stringify({ UserIdentity: email, Password: password, Type: 2 }),
+    body: JSON.stringify({ userIdentity: email, password, type: 2 }),
   });
 
-  const session: SpeedianceSession = { token: data.Token, appUserId: String(data.AppUserID) };
+  const session: SpeedianceSession = { token: data.token, appUserId: String(data.appUserId) };
   sessionCache.set(email, session);
   return session;
 }
