@@ -301,6 +301,13 @@ export async function pushProgram(
         0,
       );
 
+      // Field casing here is the same best-effort camelCase fix applied to
+      // login (client.ts login()): a "Server error" response from this
+      // exact endpoint, right after the login casing fix got login past
+      // its own casing bug, is the live signal these were PascalCase
+      // guesses from the same unreliable source. Not yet independently
+      // confirmed — the raw response (logged server-side, shown in the
+      // push dialog) will say if a field name here is still wrong.
       const actionLibraryList = plan.exercises.map((ex) => {
         const reps = ex.sets.map((s) => s.reps).join(",");
         const weights = ex.sets.map((s) => s.weight.toFixed(1)).join(",");
@@ -309,12 +316,12 @@ export async function pushProgram(
         return {
           actionId: ex.id,
           title: ex.title,
-          SetsAndReps: reps,
-          Weights: weights,
-          BreakTime: rest,
-          BreakTime2: rest,
-          SportMode: mode,
-          LeftRight: ex.sets.map(() => "0").join(","),
+          setsAndReps: reps,
+          weights: weights,
+          breakTime: rest,
+          breakTime2: rest,
+          sportMode: mode,
+          leftRight: ex.sets.map(() => "0").join(","),
         };
       });
 
