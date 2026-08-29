@@ -134,17 +134,40 @@ async function request<T>(
     clearTimeout(timeout);
   }
 
+  const url = `${baseUrl()}${path}`;
+  const rawBody = await res.text();
+
   if (!res.ok) {
+    console.error(`Speediance API ${url} -> HTTP ${res.status}. Body:\n${rawBody.slice(0, 2000)}`);
     throw new Error(`Speediance API ${path} responded ${res.status}`);
   }
-  const envelope = (await res.json()) as SpeedianceEnvelope<T>;
+
+  let envelope: SpeedianceEnvelope<T>;
+  try {
+    envelope = JSON.parse(rawBody) as SpeedianceEnvelope<T>;
+  } catch {
+    console.error(`Speediance API ${url} -> HTTP 200 but not JSON. Body:\n${rawBody.slice(0, 2000)}`);
+    throw new Error(
+      `Speediance API ${path} returned non-JSON: ${rawBody.slice(0, 200) || "(empty body)"}`,
+    );
+  }
+
+  // This is a reverse-engineered, undocumented envelope shape. If Code is
+  // missing entirely, the real response doesn't match what was assumed —
+  // log the full body server-side (it's Speediance's reply, not anything
+  // of ours, so nothing sensitive in it) and put a snippet in the thrown
+  // error too, so the actual shape is visible instead of guessed at again.
+  if (envelope.Code === undefined) {
+    console.error(`Speediance API ${url} -> HTTP 200, no Code field. Body:\n${rawBody.slice(0, 2000)}`);
+    throw new Error(`Speediance API ${path} returned an unexpected shape: ${rawBody.slice(0, 300)}`);
+  }
   if (envelope.Code === TOKEN_EXPIRED_CODE) {
     const err = new Error("Speediance token expired") as Error & { expired: true };
     err.expired = true;
     throw err;
   }
   if (envelope.Code !== 0) {
-    throw new Error(envelope.Msg ?? `Speediance API ${path} returned code ${envelope.Code}`);
+    throw new Error(envelope.Msg ?? `Speediance API ${path} returned code ${envelope.Code}: ${rawBody.slice(0, 300)}`);
   }
   return envelope.Data;
 }
