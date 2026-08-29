@@ -20,26 +20,32 @@
 
 import type {
   CatalogPullResult,
+  GroupListEntry,
   LoginData,
   Plan,
   PushDayResult,
   RawLibraryExercise,
   SpeedianceEnvelope,
+  UnilateralData,
 } from "./types";
 
 const TOKEN_EXPIRED_CODE = 91;
 
+// Verified against internal/api/types.go's baseURLs map: exactly two keys,
+// "Global" and "EU" (case-sensitive), with any unrecognized region falling
+// back to Global — not "us"/"eu" as an earlier, source-derived-by-summary
+// guess had it (the EU host in particular was a different domain entirely:
+// api2-eu.speediance.com does not exist; the real one is euapi.speediance.com).
 function baseUrl(): string {
-  const region = process.env.SPEEDIANCE_REGION;
-  if (!region) throw new Error("SPEEDIANCE_REGION is not configured");
-  // Frozen: the CLI resolves region -> host; api2 is the confirmed GM2 host.
   const hosts: Record<string, string> = {
-    us: "https://api2.speediance.com/api",
-    eu: "https://api2-eu.speediance.com/api",
+    Global: "https://api2.speediance.com/api",
+    EU: "https://euapi.speediance.com/api",
   };
-  const url = hosts[region.toLowerCase()];
-  if (!url) throw new Error(`Unknown SPEEDIANCE_REGION "${region}"`);
-  return url;
+  const region = process.env.SPEEDIANCE_REGION ?? "Global";
+  if (!(region in hosts)) {
+    console.warn(`SPEEDIANCE_REGION "${region}" is not "Global" or "EU" — falling back to Global, matching the CLI's own behavior.`);
+  }
+  return hosts[region] ?? hosts.Global;
 }
 
 function deviceType(): number {
@@ -50,8 +56,14 @@ function deviceType(): number {
   return n;
 }
 
-// Header set frozen to match the Android app byte-for-byte, per the CLI's
-// own comments. Deviating risks the endpoint rejecting the request outright.
+// Header set verified against internal/api/client.go's setHeaders(). The
+// Mobiledevices value is a fixed device-fingerprint JSON string the Go
+// client hardcodes for every request (spoofing an Android emulator) — an
+// earlier, source-derived-by-summary guess had this as the placeholder
+// string "web", which was wrong.
+const MOBILE_DEVICES_FINGERPRINT =
+  '{"brand":"google","device":"emulator64","deviceType":"sdk_gphone64","os":"","os_version":"31","manufacturer":"Google"}';
+
 function baseHeaders(): Record<string, string> {
   return {
     "User-Agent": "Dart/3.9 (dart:io)",
@@ -62,7 +74,7 @@ function baseHeaders(): Record<string, string> {
     Versioncode: "40304",
     "Accept-Language": "en",
     App_type: "SOFTWARE",
-    Mobiledevices: "web",
+    Mobiledevices: MOBILE_DEVICES_FINGERPRINT,
   };
 }
 
@@ -283,6 +295,45 @@ export async function pullCatalog(email: string, password: string): Promise<Cata
 }
 
 // --- Program push (§4.2, §4.3) --------------------------------------------
+//
+// The payload shape below is verified against the literal struct tags in
+// internal/template/template.go (Action, Payload, BuildPayload), not a
+// summary of them — see tech spec §4.1/§4.2. A catalog id alone (what the
+// app stores as an exercise's Speediance ID, called `groupId` here) is not
+// postable by itself: the real API needs a resolved "variant" id
+// (`actionLibraryId`) and whether the exercise is unilateral, both fetched
+// fresh at push time via two lookup calls BuildPayload also makes. Skipping
+// these was the actual, structural bug behind the earlier casing fixes
+// getting login working but push still failing — those fixes were correct
+// but incomplete.
+
+/** GET .../actionLibraryGroup/list?ids=...&ids=... — maps each catalog id
+ * (groupId) to its first variant's id (actionLibraryId), the id the push
+ * payload actually needs. One call for every distinct exercise in the day. */
+async function resolveVariantIds(
+  session: SpeedianceSession,
+  groupIds: string[],
+): Promise<Map<string, string>> {
+  const qs = groupIds.map((id) => `ids=${id}`).join("&");
+  const rows = await request<GroupListEntry[]>(`/app/actionLibraryGroup/list?${qs}`, { session });
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    const variant = row.actionLibraryList?.[0];
+    if (variant) map.set(String(row.id), String(variant.id));
+  }
+  return map;
+}
+
+/** GET .../actionLibraryGroup/<id>?isDisplay=1 — whether this exercise is
+ * left/right (unilateral), which decides the leftRight CSV pattern below.
+ * One call per distinct exercise; the real client does the same, no
+ * batching endpoint exists for this. */
+async function isUnilateral(session: SpeedianceSession, groupId: string): Promise<boolean> {
+  const data = await request<UnilateralData>(`/app/actionLibraryGroup/${groupId}?isDisplay=1`, {
+    session,
+  });
+  return data.isLeftRight === 1;
+}
 
 /** Pushes a single day's plan. Weight is sent exactly as stored — the app
  * keeps everything in pounds, and the Go CLI's kg-to-API multiplier (2.2)
@@ -295,26 +346,79 @@ export async function pushProgram(
   plan: Plan,
 ): Promise<PushDayResult> {
   try {
-    await withSession(email, password, (session) => {
-      const totalCapacity = plan.exercises.reduce(
-        (sum, ex) => sum + ex.sets.reduce((s, set) => s + set.reps * set.weight, 0),
-        0,
-      );
+    await withSession(email, password, async (session) => {
+      const groupIds = Array.from(new Set(plan.exercises.map((ex) => String(ex.id))));
 
+      const variantByGroupId = await resolveVariantIds(session, groupIds);
+
+      // Sequential, matching the real client's own per-group loop — not a
+      // hot path (a day has a handful of distinct exercises, not hundreds).
+      const unilateralByGroupId = new Map<string, boolean>();
+      for (const groupId of groupIds) {
+        unilateralByGroupId.set(groupId, await isUnilateral(session, groupId));
+      }
+
+      let totalCapacity = 0;
       const actionLibraryList = plan.exercises.map((ex) => {
-        const reps = ex.sets.map((s) => s.reps).join(",");
-        const weights = ex.sets.map((s) => s.weight.toFixed(1)).join(",");
-        const rest = ex.sets.map((s) => String(s.rest ?? 60)).join(",");
-        const mode = ex.sets.map((s) => String(s.mode ?? 1)).join(",");
+        const groupId = String(ex.id);
+        const variantId = variantByGroupId.get(groupId);
+        if (!variantId) {
+          throw new Error(
+            `Could not resolve exercise ${groupId} ("${ex.title}") to a Speediance variant — the local catalog may be stale; try refreshing it.`,
+          );
+        }
+        const unilateral = unilateralByGroupId.get(groupId) ?? false;
+
+        const reps: string[] = [];
+        const breaks: string[] = [];
+        const modes: string[] = [];
+        const leftRight: string[] = [];
+        const weights: string[] = [];
+        let capacity = 0;
+
+        ex.sets.forEach((set, i) => {
+          const rest = set.rest ?? 60;
+          reps.push(String(set.reps));
+          breaks.push(String(rest));
+          modes.push(String(set.mode ?? 1));
+          leftRight.push(unilateral ? (i % 2 === 0 ? "1" : "2") : "0");
+          weights.push(set.weight.toFixed(1));
+          capacity += set.reps * set.weight;
+        });
+
+        totalCapacity += capacity;
+        const ones = ex.sets.map(() => "1").join(",");
+        const zeros = ex.sets.map(() => "0").join(",");
+
+        // capacity/totalCapacity are plain numbers here. The Go source goes
+        // to real effort (pyFloat) to render these as "1716.0" rather than
+        // Go's default "1716", explicitly to match the Python tool's output
+        // byte-for-byte — that's a self-imposed goal for diffing the two
+        // implementations against each other, not a documented server
+        // requirement, and 1716 vs 1716.0 is the same JSON number either
+        // way to any standards-compliant parser. Worth revisiting only if
+        // this exact field turns out to matter live.
+
+        // Field order matches Action in template.go — not required for
+        // correctness in JSON (key order is not semantic), kept only for
+        // easy side-by-side diffing against the source if this needs
+        // revisiting again.
         return {
-          actionId: ex.id,
-          title: ex.title,
-          SetsAndReps: reps,
-          Weights: weights,
-          BreakTime: rest,
-          BreakTime2: rest,
-          SportMode: mode,
-          LeftRight: ex.sets.map(() => "0").join(","),
+          groupId: Number(groupId),
+          actionLibraryId: Number(variantId),
+          templatePresetId: -1,
+          setsAndReps: reps.join(","),
+          breakTime: breaks.join(","),
+          breakTime2: breaks.join(","),
+          sportMode: modes.join(","),
+          leftRight: leftRight.join(","),
+          selectCompletionMethod: ones,
+          completionMethod: ones,
+          countType: ones,
+          weights: weights.join(","),
+          counterweight2: "",
+          level: zeros,
+          capacity,
         };
       });
 
@@ -323,7 +427,10 @@ export async function pushProgram(
         actionLibraryList,
         totalCapacity,
         deviceType: deviceType(),
-        bgColor: "#2F5D50",
+        // An int, always 0 in the real payload — not a hex color string.
+        // The earlier "#2F5D50" here (this app's own signal color, of all
+        // things) was never derived from the source at all.
+        bgColor: 0,
       };
 
       return request("/app/v2/customTrainingTemplate", {
