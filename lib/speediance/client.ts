@@ -303,6 +303,11 @@ export async function pushProgram(
     });
     return { dayName: plan.name, status: "success" };
   } catch (err) {
+    // Also land in the platform's function logs (Vercel, etc.) — the push
+    // dialog shows this same message, but server logs are the better
+    // place to see it alongside a stack trace when the message alone
+    // isn't enough to diagnose an undocumented API.
+    console.error(`Speediance push failed for "${plan.name}":`, err);
     return { dayName: plan.name, status: "failed", error: (err as Error).message };
   }
 }
