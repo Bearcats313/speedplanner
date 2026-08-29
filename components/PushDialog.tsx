@@ -48,11 +48,45 @@ export function PushDialog({
         body: JSON.stringify({ weekId, password, refreshCatalog: refresh, dayIds }),
         signal: controller.signal,
       });
+
+      // A rejected request (not signed in, no weekId/password, no
+      // Speediance email on the profile, week not found) short-circuits
+      // before the route ever starts streaming and comes back as a plain
+      // JSON error body, not NDJSON — read it as such rather than handing
+      // it to the line-based parser below, which would silently drop it.
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? `Push failed (HTTP ${res.status})`);
+      }
       if (!res.body) throw new Error("No response stream");
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+
+      function handleLine(line: string) {
+        if (!line.trim()) return;
+        const event = JSON.parse(line);
+        if (event.type === "day") {
+          setStatuses((prev) =>
+            prev.map((s) =>
+              s.dayName === event.dayName
+                ? { ...s, status: event.status, error: event.error }
+                : s,
+            ),
+          );
+        } else if (event.type === "done") {
+          setPhase("done");
+          if (event.refresh?.added != null) {
+            setRefreshResult(`Refresh: ${event.refresh.added} new, ${event.refresh.total} total.`);
+          } else if (event.refresh?.error) {
+            setRefreshResult(`Refresh failed: ${event.refresh.error}`);
+          }
+        } else if (event.type === "error") {
+          setError(event.error);
+          setPhase("done");
+        }
+      }
 
       while (true) {
         const { value, done } = await reader.read();
@@ -60,30 +94,16 @@ export function PushDialog({
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const event = JSON.parse(line);
-          if (event.type === "day") {
-            setStatuses((prev) =>
-              prev.map((s) =>
-                s.dayName === event.dayName
-                  ? { ...s, status: event.status, error: event.error }
-                  : s,
-              ),
-            );
-          } else if (event.type === "done") {
-            setPhase("done");
-            if (event.refresh?.added != null) {
-              setRefreshResult(`Refresh: ${event.refresh.added} new, ${event.refresh.total} total.`);
-            } else if (event.refresh?.error) {
-              setRefreshResult(`Refresh failed: ${event.refresh.error}`);
-            }
-          } else if (event.type === "error") {
-            setError(event.error);
-            setPhase("done");
-          }
-        }
+        for (const line of lines) handleLine(line);
       }
+      // The stream can end with a final line that has no trailing
+      // newline — flush whatever's left in the buffer rather than
+      // dropping it, which is what silently stalled the dialog before.
+      if (buffer.trim()) handleLine(buffer);
+      // Belt and suspenders: if the stream closed without ever sending a
+      // "done" or "error" event (server crashed mid-push, connection cut),
+      // don't leave the dialog stuck on "pending" forever either.
+      setPhase((p) => (p === "pushing" ? "done" : p));
       router.refresh();
     } catch (err) {
       setError((err as Error).message);
