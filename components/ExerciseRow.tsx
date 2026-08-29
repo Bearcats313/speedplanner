@@ -5,7 +5,10 @@ import { CSS } from "@dnd-kit/utilities";
 import type { DayExercise, Exercise } from "@/lib/db/types";
 
 export interface ExerciseRowData extends DayExercise {
-  exercise: Exercise;
+  // seconds_per_set is flattened onto the exercise by getActiveWeek() from
+  // its enrichment join, for the day's duration estimate — not a raw
+  // catalog column.
+  exercise: Exercise & { seconds_per_set?: number | null };
 }
 
 export function ExerciseRow({ row }: { row: ExerciseRowData }) {

@@ -21,7 +21,11 @@ export function DayCard({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: dayId, data: { type: "day", dayId } });
   const durationSeconds = dayDurationSeconds(
-    exercises.map((e) => ({ sets: e.sets, rest_seconds: e.rest_seconds, seconds_per_set: null })),
+    exercises.map((e) => ({
+      sets: e.sets,
+      rest_seconds: e.rest_seconds,
+      seconds_per_set: e.exercise.seconds_per_set ?? null,
+    })),
   );
 
   return (

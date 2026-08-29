@@ -30,11 +30,11 @@ export default function GeneratePage() {
     if (notes) formData.set("notes", notes);
 
     startTransition(async () => {
-      try {
-        await submitIntake(formData);
+      const result = await submitIntake(formData);
+      if (result.error) {
+        setError(result.error);
+      } else {
         router.push("/week");
-      } catch (err) {
-        setError((err as Error).message || "Generation failed. Try again.");
       }
     });
   }

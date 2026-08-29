@@ -20,11 +20,11 @@ export function RefinementBar({
     setError(null);
     const message = value;
     startTransition(async () => {
-      try {
-        await refineWeekAction(weekId, message);
+      const result = await refineWeekAction(weekId, message);
+      if (result.error) {
+        setError(result.error);
+      } else {
         setValue("");
-      } catch (err) {
-        setError((err as Error).message || "Refinement failed. Try again.");
       }
     });
   }

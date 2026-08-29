@@ -117,12 +117,6 @@ actually been run live and confirmed working:
 - **Transcribe** (`/transcribe/[dayId]`) is a stub. Tech spec §7.2, §9: "not
   built in v1" — it's the fallback for a dead push endpoint, and push is
   confirmed working. Build it out from PRD R7 the day push actually breaks.
-- **Session duration estimate** on the week view uses a flat default
-  seconds-per-set rather than each exercise's enriched value, to keep the
-  week query from needing a second join. Generation itself does use the
-  real per-exercise `seconds_per_set` (tech spec §5.2) — only the client-side
-  display estimate on `/week` is approximate. Worth tightening once real
-  enrichment data exists to look at.
 - **Settings screen** (`/settings`) isn't one of the tech spec's four named
   screens, but difficulty (PRD R9) and the Speediance account email need
   somewhere to live, so it's a fifth, minimal one.

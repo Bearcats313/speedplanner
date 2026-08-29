@@ -13,7 +13,7 @@ export async function getActiveWeek(): Promise<WeekWithDays | null> {
   const { data, error } = await supabase
     .from("weeks")
     .select(
-      "*, days:week_days(*, exercises:day_exercises(*, exercise:exercises(*)))",
+      "*, days:week_days(*, exercises:day_exercises(*, exercise:exercises(*, exercise_enrichment(seconds_per_set))))",
     )
     .eq("user_id", userId)
     .eq("is_active", true)
@@ -23,44 +23,82 @@ export async function getActiveWeek(): Promise<WeekWithDays | null> {
 
   const week = data as unknown as WeekWithDays;
   week.days.sort((a, b) => a.day_index - b.day_index);
-  for (const day of week.days) day.exercises.sort((a, b) => a.position - b.position);
+  for (const day of week.days) {
+    day.exercises.sort((a, b) => a.position - b.position);
+    // The displayed duration estimate previously always used a flat
+    // fallback per set (reported live: sessions requested at 45 min were
+    // showing as 20-30) because this query never joined enrichment at
+    // all. Flatten exercise_enrichment (a to-one relation Postgrest can
+    // return as an object or a single-element array depending on the
+    // query shape) onto the exercise so DayCard can read a real value.
+    for (const de of day.exercises) {
+      type Raw = { seconds_per_set: number | null } | { seconds_per_set: number | null }[] | null;
+      const raw = (de.exercise as unknown as { exercise_enrichment?: Raw }).exercise_enrichment;
+      const enrichment = Array.isArray(raw) ? (raw[0] ?? null) : raw;
+      (de.exercise as unknown as { seconds_per_set: number | null }).seconds_per_set =
+        enrichment?.seconds_per_set ?? null;
+    }
+  }
   return week;
 }
 
-export async function submitIntake(formData: FormData) {
-  const { supabase, userId } = await requireUser();
-
-  const raw = {
-    goal: formData.get("goal"),
-    focus_muscles: formData.getAll("focus_muscles"),
-    days_per_week: Number(formData.get("days_per_week")),
-    session_minutes: Number(formData.get("session_minutes")),
-    notes: formData.get("notes") || undefined,
-  };
-  const intake = IntakeInputSchema.parse(raw);
-
-  const { data: intakeRow, error } = await supabase
-    .from("intakes")
-    .insert({
-      user_id: userId,
-      goal: intake.goal,
-      focus_muscles: intake.focus_muscles,
-      days_per_week: intake.days_per_week,
-      session_minutes: intake.session_minutes,
-      notes: intake.notes ?? null,
-    })
-    .select()
-    .single();
-  if (error || !intakeRow) throw new Error(`Failed to save intake: ${error?.message}`);
-
-  await generateWeekInternal(supabase, userId, intakeRow.id);
-  revalidatePath("/week");
+// Next.js redacts the real message of anything that *throws* out of a
+// Server Action in a production build, replacing it with a generic
+// "Server Components render" error with no detail — reported live via the
+// refinement bar. submitIntake and refineWeekAction both need to surface
+// real errors to the UI (tech spec §7.4: "says what failed... never
+// 'something went wrong'"), so they catch their own errors and return
+// them as data instead of letting them throw across the action boundary.
+export interface ActionResult {
+  error?: string;
 }
 
-export async function refineWeekAction(weekId: string, message: string) {
-  const { supabase, userId } = await requireUser();
-  await refineWeekInternal(supabase, userId, weekId, message);
-  revalidatePath("/week");
+export async function submitIntake(formData: FormData): Promise<ActionResult> {
+  try {
+    const { supabase, userId } = await requireUser();
+
+    const raw = {
+      goal: formData.get("goal"),
+      focus_muscles: formData.getAll("focus_muscles"),
+      days_per_week: Number(formData.get("days_per_week")),
+      session_minutes: Number(formData.get("session_minutes")),
+      notes: formData.get("notes") || undefined,
+    };
+    const intake = IntakeInputSchema.parse(raw);
+
+    const { data: intakeRow, error } = await supabase
+      .from("intakes")
+      .insert({
+        user_id: userId,
+        goal: intake.goal,
+        focus_muscles: intake.focus_muscles,
+        days_per_week: intake.days_per_week,
+        session_minutes: intake.session_minutes,
+        notes: intake.notes ?? null,
+      })
+      .select()
+      .single();
+    if (error || !intakeRow) throw new Error(`Failed to save intake: ${error?.message}`);
+
+    await generateWeekInternal(supabase, userId, intakeRow.id);
+    revalidatePath("/week");
+    return {};
+  } catch (err) {
+    console.error("submitIntake failed:", err);
+    return { error: (err as Error).message || "Generation failed. Try again." };
+  }
+}
+
+export async function refineWeekAction(weekId: string, message: string): Promise<ActionResult> {
+  try {
+    const { supabase, userId } = await requireUser();
+    await refineWeekInternal(supabase, userId, weekId, message);
+    revalidatePath("/week");
+    return {};
+  } catch (err) {
+    console.error("refineWeekAction failed:", err);
+    return { error: (err as Error).message || "Refinement failed. Try again." };
+  }
 }
 
 /** Reorders exercises within one day to match `orderedIds`. Renumbers with
