@@ -15,6 +15,8 @@ Source files read directly for this table:
 - `internal/api/types.go`
 - `internal/api/client.go`
 - `internal/api/endpoints.go`
+- `internal/config/config.go`
+- `internal/cli/push.go`
 - `internal/template/template.go`
 - `internal/template/library.go`
 
@@ -29,6 +31,21 @@ Region keys are case-sensitive. `SPEEDIANCE_REGION` should be `Global` or
 `EU`, not `us`/`eu` — an earlier version of this app used the latter, which
 happened to resolve to the same Global host by coincidence but had the
 wrong EU host entirely (`api2-eu.speediance.com`, which does not exist).
+
+## Device type
+
+`SPEEDIANCE_DEVICE_TYPE` is a plain integer API parameter, not a GM1/GM2
+selector — there is no string like `"GM2"` anywhere in the API. `config.go`
+defines `DefaultDeviceType = 1` with the comment "Gym Monster 1 — the only
+tested device." Nothing in the CLI's source does any GM1-vs-GM2 branching
+on this value at all; it's just always passed through as an opaque int.
+Live evidence: setting this env var to the string `"GM2"` fails fast with
+a client-side "not numeric" error (this app's own validation, not a
+Speediance response) — confirming it must be a number, not a model name.
+`1`, matching the CLI's own default, is `inferred` to be correct for GM2
+as well specifically because nothing in the source treats device
+generation as a factor at all — not yet `verified: capture` against a
+live GM2 push landing with this exact value.
 
 ## Headers (every request)
 
