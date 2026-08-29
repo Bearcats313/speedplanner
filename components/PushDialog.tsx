@@ -164,21 +164,28 @@ export function PushDialog({
             <p className="text-[16px] font-medium text-ink">
               {phase === "pushing" ? "Pushing…" : "Pushed"}
             </p>
-            <ul className="mt-3 flex flex-col gap-2">
+            <ul className="mt-3 flex flex-col gap-1">
               {statuses.map((s) => (
-                <li key={s.dayId} className="flex items-center justify-between text-[14px]">
-                  <span>{s.dayName}</span>
-                  <span
-                    className={
-                      s.status === "success"
-                        ? "text-signal"
-                        : s.status === "failed"
-                          ? "text-flag"
-                          : "text-ink/40"
-                    }
-                  >
-                    {s.status === "pending" ? "…" : s.status}
-                  </span>
+                <li key={s.dayId} className="text-[14px]">
+                  <div className="flex items-center justify-between">
+                    <span>{s.dayName}</span>
+                    <span
+                      className={
+                        s.status === "success"
+                          ? "text-signal"
+                          : s.status === "failed"
+                            ? "text-flag"
+                            : "text-ink/40"
+                      }
+                    >
+                      {s.status === "pending" ? "…" : s.status}
+                    </span>
+                  </div>
+                  {/* The status alone doesn't say why — a failed day with
+                      no visible reason isn't debuggable, reported live. */}
+                  {s.status === "failed" && s.error && (
+                    <p className="mt-0.5 text-[13px] text-flag/80">{s.error}</p>
+                  )}
                 </li>
               ))}
             </ul>
